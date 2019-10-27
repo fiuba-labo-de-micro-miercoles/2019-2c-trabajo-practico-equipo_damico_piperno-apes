@@ -1,0 +1,103 @@
+;programa para comunicación serial UART 
+;con atmega328p y un monitor serie en computadora
+.include "m328Pdef.inc"
+.dseg
+	.def  usart_leido = r16
+	.def usart_escribir = r19
+.cseg
+	.ORG 0x00
+	rjmp main
+	.ORG int_vectors_size
+
+main:
+	;inicializo el SP
+	ldi r20, high(RAMEND)
+	out sph, r20
+	ldi r20, low(RAMEND)
+	out spl, r20
+  
+	;seteo leds conectados a la placa como salida
+	ldi r16, 0b00011100
+	out ddrD, r16
+
+	;cargo el valor para el BAUD rate (BAUD = 9600) --> UBRR = 103
+	ldi r17, high(103)
+	ldi r16, low(103)
+	
+	;inicializo la comunicacion usart
+	rcall USART_Init
+	
+  ;limpio los registros que voy a usar
+	clr r16
+	clr r17
+
+loop:
+	;escribo el contenido del r17 en la interfaz
+	mov usart_escribir, r17
+	rcall USART_Transmit
+
+	;leo lo que mandan por la interfaz y lo guarda en r17 
+	;(solo entra a USART_Receive si mandaron algo, porque chequea el RXC0
+	; del registro UCSR0A)
+	lds R21, UCSR0A
+	sbrc R21, RXC0
+	rcall USART_Receive
+	mov r17, usart_leido
+
+  ;prendo o apago leds conectados a PORTD.2, PORTD.3 y PORTD.4
+	OUT PORTD, r17
+
+  ;pongo un delay asi no manda la informacion a la interfaz tan rapido	
+	rcall delay
+
+	rjmp loop
+
+
+;inicializar la comunicación USART asincronica normal
+USART_Init:
+	; Setea baud rate (asume que el UBRR esta en R17(H):R16(L))
+	sts UBRR0H, r17
+	sts UBRR0L, r16
+	; habilita transmisión y recepción
+	ldi r16, (1<<RXEN0)|(1<<TXEN0)
+	sts UCSR0B,r16
+	; Setea formato de "frame"(bits de la comunicacion): 8data, 2stop bit
+	ldi r16, (1<<USBS0)|(3<<UCSZ00)
+	sts UCSR0C,r16
+	ret
+
+
+;recibir datos de 5 a 8 bits en Usart_leido
+USART_Receive:
+	; Espera a recibir dato
+	lds R21, UCSR0A
+	sbrs R21, RXC0
+	rjmp USART_Receive
+	; recibe los datos del buffer UDR0
+	lds usart_leido, UDR0
+	ret
+
+;transmitir 5 a 8 bits por usart_escribir
+USART_Transmit:
+	; Espera a que el buffer de transmisión este vacío
+	lds R20,UCSR0A
+	sbrs R20,UDRE0
+	rjmp USART_Transmit
+	; pone el dato de R16 en el buffer de transmisión y lo envía
+	sts UDR0,usart_escribir
+	ret
+
+
+delay:
+	ldi r22, $50
+again3:	ldi r18, $FF
+again2: ldi r23, $FF
+again1:	dec r23
+
+	brne again1
+	dec r18
+	brne again2
+	dec r22
+	brne again3
+	nop
+	ret
