@@ -5,11 +5,11 @@ Integrantes:
 
   Ignacio Piperno
 
-  Agustín D´amico
+  Agustín D'amico
   
 Proyecto:
   
-  Dispenser automatico de tragos
+  Fernetera
 
 Breve descripción: 
   
