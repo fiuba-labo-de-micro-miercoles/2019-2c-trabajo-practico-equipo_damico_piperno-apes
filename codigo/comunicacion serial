@@ -87,7 +87,6 @@ USART_Transmit:
 	sts UDR0,usart_escribir
 	ret
 
-
 delay:
 	ldi r22, $50
 again3:	ldi r18, $FF
