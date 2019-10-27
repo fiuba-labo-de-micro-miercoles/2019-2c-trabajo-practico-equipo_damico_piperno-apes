@@ -1,0 +1,85 @@
+;codigo que incluye función para leer datos del módulo amplificador y conversor hx711 conectado a celda de carga
+;Se trabaja con el Microcontrolador ATMega328P
+.include "m328Pdef.inc"
+.def A=r20
+.equ ADSK = 2
+.equ ADDO = 3
+
+
+.dseg
+
+
+.cseg
+  	.ORG 0x00
+  	rjmp main
+	  .ORG int_vectors_size
+
+main:
+	  ;inicializo el SP
+	  ldi r20, high(RAMEND)
+	  out sph, r20
+	  ldi r20, low(RAMEND)
+	  out spl, r20
+
+	  ;inicializo los pines de clock y dato conectados
+	  sbi ddrD, ADSK
+	  cbi ddrD, ADDO
+
+loop:
+  	rcall readAD
+	  rjmp loop
+
+
+;leer conversión analógica digital
+;salida: r18:r17:r16 (r16 lsb), r19 es un contador
+;ADSK es el pin del clock para el hx711, ADDO es el pin de datos del hx711, Asume que las conexiones estan en el puerto D
+;A es un registro acumulador
+readAD:
+  	push r19
+	  push A
+
+  	;habilito la conversión de datos si no estaba activada
+	  cbi portD, ADSK
+
+  	;si no termino la conversión vuelve a chequear ADDO
+AD_not_finished:
+	  sbic pinD, ADDO 	
+	  rjmp AD_not_finished
+
+  	;cargo el contador r19 con 24 para pasar 24 bits
+	  ldi r19, 24
+
+ShiftOut:
+	  ;mando un pulso de clock
+	  sbi portD, ADSK
+	  NOP
+	  cbi portD, ADSK
+
+  	;guarda el dato leido en el carry
+	  sbic pinD, ADDO
+	  sec			
+	
+	  ;guarda el bit leido en los registros
+	  mov A,R16
+  	rol A
+	  mov R16,A
+  	mov A,R17
+  	rol A
+	  mov R17,A
+  	mov A,R18
+  	rol A
+	  mov R18,A
+	  ;chequeo si movio los 24 bits
+  	dec r19
+	  brne ShiftOut
+
+  	;vuelvo a poner el clock en 1 cuando termina y asi pone a DOUT en alto nuevamente cuando finaliza la conversión
+	  sbi portD, ADSK
+	  NOP
+
+  	;el clock debe terminar en bajo para no entrar en modo de bajo consumo del hx711
+  	cbi portD, ADSK
+
+  	pop A
+  	pop r19
+  	ret 
