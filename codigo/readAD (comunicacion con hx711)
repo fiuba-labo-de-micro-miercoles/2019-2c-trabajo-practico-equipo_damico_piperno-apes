@@ -5,6 +5,19 @@
 .equ ADSK = 2
 .equ ADDO = 3
 
+/* El conversor Analógico/Digital HX711 tiene 2 terminales: DT y SCK.
+DT es una entrada para el micro (con pull-up) y SCK es una salida del microcontrolador.
+Con SCK en alto x más de 60uS el HX711 entra en modo bajo consumo.
+Con SCK en bajo, el HX711 convierte a razón de 10 muestras x segundo.
+Cuando termina una conversión HX711 baja DT y se pueden leer los 24 bits del resultado de la conversión.
+Se lee un bit levantando y bajando SCK (1uS arriba y 1uS abajo) y a continuación mirando el nivel en el pin DT.
+Repitiendo 24 veces se obtiene el valor de la conversión. El bit más significativo se lee primero.
+Luego de estos 24 pulsos en SCK se decide cuál es la siguiente conversión pulsando SCK:
+   1 vez : canal_A con ganancia x 128
+   2 veces: canal_B con ganancia x 32
+   3 veces: canal_B con ganancia x 64
+Cuando el HX711 termina la siguiente conversión vuelve a bajar DT.
+*/
 
 .dseg
 
