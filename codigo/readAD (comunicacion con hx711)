@@ -65,7 +65,8 @@ AD_not_finished:
 ShiftOut:
 	  ;mando un pulso de clock
 	  sbi portD, ADSK
-	  NOP
+	  ;se necesita delay de 1us aproximadamente, usamos 18 ciclos de máquina (con freq=16MHz), por lo que tarda 1,125us
+	  rcall T_high
 	  cbi portD, ADSK
 
   	;guarda el dato leido en el carry
@@ -88,7 +89,7 @@ ShiftOut:
 
   	;vuelvo a poner el clock en 1 cuando termina y asi pone a DOUT en alto nuevamente cuando finaliza la conversión
 	  sbi portD, ADSK
-	  NOP
+	  rcall T_high
 
   	;el clock debe terminar en bajo para no entrar en modo de bajo consumo del hx711
   	cbi portD, ADSK
@@ -96,3 +97,15 @@ ShiftOut:
   	pop A
   	pop r19
   	ret 
+	
+	
+;este delay dura 15 ciclos de maquina, sin contar el rcall
+T_high:
+	push r16
+	ldi r16, 3
+T_h_loop:
+	dec r16
+	brne T_h_loop
+	
+	pop r16
+	ret
