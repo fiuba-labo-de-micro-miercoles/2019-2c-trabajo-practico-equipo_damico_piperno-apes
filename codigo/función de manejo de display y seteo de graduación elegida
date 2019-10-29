@@ -1,0 +1,166 @@
+;funciones de manejo de display y para setear graduacion elegida
+
+.include "m328Pdef.inc"
+
+;----------- modificar_display -----------
+;registro auxiliar
+.def display = r16
+;puerto utilizado para el display
+.equ DDR_display = DDRD
+.equ port_display = portD				 
+
+;posiciones de los LEDs en el puerto
+.equ LED_1 = 2
+.equ LED_2 = 3
+.equ LED_3 = 4
+.equ LED_4 = 5
+.equ LED_5 = 6
+;-----------------------------------------
+
+;----------- setear graduacion -----------
+;en estos registros queda guardado el peso de la graduacion seleccionada
+.def peso_graduacion_L = r17 
+.def peso_graduacion_M = r18
+.def peso_graduacion_H = r19
+
+;deben coincidir con la posicion de los LEDs
+.equ GRAD_20 =2
+.equ GRAD_30 =3
+.equ GRAD_40 =4
+.equ GRAD_50 =5
+
+;aca van los valores del peso de cada graduacion otorgados por el modulo hx711 (todavia no los pudimos obtener)
+.equ PESO_GRAD10_L =1
+.equ PESO_GRAD10_M =1
+.equ PESO_GRAD10_H =1
+
+.equ PESO_GRAD20_L =1
+.equ PESO_GRAD20_M =1
+.equ PESO_GRAD20_H =1
+
+.equ PESO_GRAD30_L =1
+.equ PESO_GRAD30_M =1
+.equ PESO_GRAD30_H =1
+
+.equ PESO_GRAD40_L =1
+.equ PESO_GRAD40_M =1
+.equ PESO_GRAD40_H =1
+
+.equ PESO_GRAD50_L =1
+.equ PESO_GRAD50_M =1
+.equ PESO_GRAD50_H =1
+;-----------------------------------------
+
+.cseg
+	.ORG 0x00
+	rjmp main
+	.ORG int_vectors_size
+
+main:
+	;inicializo el SP
+	ldi r20, high(RAMEND)
+	out sph, r20
+	ldi r20, low(RAMEND)
+	out spl, r20
+
+;ejemplo de uso
+
+    ;seteo como salidas a los pines de los led del display
+	  in r16, DDR_display
+	  ori r16, (1<<LED_1)|(1<<LED_2)|(1<<LED_3)|(1<<LED_4)|(1<<LED_5)
+	  out  DDR_display, r16
+	  ;siempre debe estar prendido el LED_1 (no hay opcion de graduacion 0)
+	  sbi port_display, LED_1
+
+	  rcall modificar_display
+	  rcall setear_graduacion
+here:
+	  rjmp here
+
+
+;funcion que prende el led siguiente al prendido, y si estaban todos prendidos
+;vuelve al principio (solo el primer led prendido)
+modificar_display:
+	  push display
+
+  	;comparamos uno a uno si estan encendidos los LEDs
+	  ; cuando lee uno no prendido, lo prende y sale
+	  sbis port_display, LED_2
+	  rjmp d_graduacion_20
+	  sbis port_display, LED_3
+	  rjmp d_graduacion_30
+	  sbis port_display, LED_4
+	  rjmp d_graduacion_40
+	  sbis port_display, LED_5
+	  rjmp d_graduacion_50
+	
+  	;si todos los LEDs estaban prendidos, reinicia el display
+  	;dejando prendido el LED1 (y deja los pines que no son led como estaban)
+  	in display, port_display
+  	andi display, ~((1<<LED_2)|(1<<LED_3)|(1<<LED_4)|(1<<LED_5))
+  	rjmp ret_modificar_display
+ 
+d_graduacion_20:
+	  sbi port_display, LED_2
+	  rjmp ret_modificar_display
+d_graduacion_30:
+	  sbi port_display, LED_3
+	  rjmp ret_modificar_display
+d_graduacion_40:
+	  sbi port_display, LED_4
+	  rjmp ret_modificar_display
+d_graduacion_50:
+	  sbi port_display, LED_5
+	  rjmp ret_modificar_display
+
+ret_modificar_display:
+	  pop display
+	  ret
+
+
+;guarda en los registros peso_graduacion_L/_M/_H 
+;los valores correspondientes a la graduación elegida
+setear_graduacion:
+	
+  	;chequea cual es el primer led apagado, y carga la graduación del anterior (que estaba prendido)
+  	sbis port_display, GRAD_20
+  	rjmp s_graduacion_10
+  	sbis port_display, GRAD_30
+	  rjmp s_graduacion_20
+	  sbis port_display, GRAD_40
+	  rjmp s_graduacion_30
+	  sbis port_display, GRAD_50
+	  rjmp s_graduacion_40
+	
+	  ;si todos los LEDs estaban prendidos, setea graduación 50%
+  	rjmp s_graduacion_50
+
+;carga 3 registros (24bits) con el peso
+;que tiene el vaso con cada graduacion servida
+s_graduacion_10:
+  	ldi peso_graduacion_L, PESO_GRAD10_L
+  	ldi peso_graduacion_M, PESO_GRAD10_M
+  	ldi peso_graduacion_H, PESO_GRAD10_H
+  	rjmp ret_setear_graduacion
+s_graduacion_20:
+  	ldi peso_graduacion_L, PESO_GRAD20_L
+  	ldi peso_graduacion_M, PESO_GRAD20_M
+  	ldi peso_graduacion_H, PESO_GRAD20_H
+  	rjmp ret_setear_graduacion
+s_graduacion_30:
+	  ldi peso_graduacion_L, PESO_GRAD30_L
+	  ldi peso_graduacion_M, PESO_GRAD30_M
+	  ldi peso_graduacion_H, PESO_GRAD30_H
+	  rjmp ret_setear_graduacion
+s_graduacion_40:
+	  ldi peso_graduacion_L, PESO_GRAD40_L
+	  ldi peso_graduacion_M, PESO_GRAD40_M
+	  ldi peso_graduacion_H, PESO_GRAD40_H
+	  rjmp ret_setear_graduacion
+s_graduacion_50:
+	  ldi peso_graduacion_L, PESO_GRAD50_L
+	  ldi peso_graduacion_M, PESO_GRAD50_M
+	  ldi peso_graduacion_H, PESO_GRAD50_H
+
+ret_setear_graduacion:
+	  ret
