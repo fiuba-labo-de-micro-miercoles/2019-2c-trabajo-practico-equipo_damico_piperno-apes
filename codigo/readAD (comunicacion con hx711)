@@ -55,7 +55,7 @@ main:
 	  cbi DDR_ADDO, ADDO
 
 loop:
-  	rcall readAD
+  	  rcall leer_hx711
 	  rjmp loop
 
 
