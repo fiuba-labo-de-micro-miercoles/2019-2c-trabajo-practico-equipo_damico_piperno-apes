@@ -1,7 +1,7 @@
 ;codigo que incluye función para leer datos del módulo amplificador y conversor hx711 conectado a celda de carga
 ;Se trabaja con el Microcontrolador ATMega328P
 .include "m328Pdef.inc"
-;------------- definiciones readAD -------------
+;------------- definiciones leer_hx711 -------------
 ;registro auxiliar
 .def A=r20
 
@@ -63,7 +63,7 @@ loop:
 ;salida: r18:r17:r16 (r16 lsb), r19 es un contador
 ;ADSK es el pin del clock para el hx711, ADDO es el pin de datos del hx711, Asume que las conexiones estan en el puerto D
 ;A es un registro acumulador
-readAD:
+leer_hx711:
   	  push r19
 	  push A
 
