@@ -5,20 +5,23 @@
 ;registro auxiliar
 .def A=r20
 
+;numero de bits a leer
+.equ NRO_BITS = 24
+
 ;defino los registros de I/O que voy a usar
 .equ DDR_ADSK = DDRB
 .equ DDR_ADDO = DDRB
-.equ port_ADSK = portB
-.equ pin_ADDO = pinB
+.equ PORT_ADSK = portB
+.equ PIN_ADDO = pinB
 
 ;pines de el/los puerto/s a utilizar
 .equ ADSK = 0
 .equ ADDO = 1
 
 ;registros de salida del dato leido
-.def peso_leido_L = r16
-.def peso_leido_M = r17
-.def peso_leido_H = r18
+.def PESO_LEIDO_L = r16
+.def PESO_LEIDO_M = r17
+.def PESO_LEIDO_H = r18
 ;-----------------------------------------------
 
 /* El conversor Analógico/Digital HX711 tiene 2 terminales: DT y SCK.
@@ -68,47 +71,47 @@ leer_hx711:
 	  push A
 
   	  ;habilito la conversión de datos si no estaba activada
-	  cbi port_ADSK, ADSK
+	  cbi PORT_ADSK, ADSK
 
   	  ;si no termino la conversión vuelve a chequear ADDO
 AD_not_finished:
-	  sbic pin_ADDO, ADDO 	
+	  sbic PIN_ADDO, ADDO 	
 	  rjmp AD_not_finished
 
   	  ;cargo el contador r19 con 24 para pasar 24 bits
-	  ldi r19, 24
-
+	  ldi r19, NRO_BITS
+	  
 ShiftOut:
 	  ;mando un pulso de clock
-	  sbi port_ADSK, ADSK
+	  sbi PORT_ADSK, ADSK
 	  ;se necesita delay de 1us aproximadamente, usamos 18 ciclos de máquina (con freq=16MHz), por lo que tarda 1,125us
 	  rcall T_high
-	  cbi port_ADSK, ADSK
+	  cbi PORT_ADSK, ADSK
 
   	  ;guarda el dato leido en el carry
-	  sbic pin_ADDO, ADDO
+	  sbic PIN_ADDO, ADDO
 	  sec			
 	
 	  ;guarda el bit leido en los registros
-	  mov A,peso_leido_L
+	  mov A,PESO_LEIDO_L
   	rol A
-	  mov peso_leido_L,A
-  	mov A,peso_leido_M
+	  mov PESO_LEIDO_L,A
+  	mov A,PESO_LEIDO_M
   	rol A
-	  mov peso_leido_M,A
-  	mov A,peso_leido_H
+	  mov PESO_LEIDO_M,A
+  	mov A,PESO_LEIDO_H
   	rol A
-	  mov peso_leido_H,A
+	  mov PESO_LEIDO_H,A
 	  ;chequeo si movio los 24 bits
   	dec r19
 	  brne ShiftOut
 
   	;mando 1 pulso mas para indicar que la proxima conversión sea de la entrada A del modulo
-	  sbi port_ADSK, ADSK
+	  sbi PORT_ADSK, ADSK
 	  rcall T_high
 
   	;el clock debe terminar en bajo para no entrar en modo de bajo consumo del hx711
-  	cbi port_ADSK, ADSK
+  	cbi PORT_ADSK, ADSK
 
   	pop A
   	pop r19
