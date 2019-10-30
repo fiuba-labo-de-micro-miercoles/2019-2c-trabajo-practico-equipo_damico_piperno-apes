@@ -15,8 +15,8 @@
 .equ PIN_ADDO = pinB
 
 ;pines de el/los puerto/s a utilizar
-.equ ADSK = 0
-.equ ADDO = 1
+.equ ADSK = 1
+.equ ADDO = 0
 
 ;registros de salida del dato leido
 .def PESO_LEIDO_L = r16
