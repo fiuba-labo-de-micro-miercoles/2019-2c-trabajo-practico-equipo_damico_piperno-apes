@@ -2,8 +2,10 @@
 
 ;------------- definiciones leer_hx711 -------------
 ;registros auxiliares
+.def contador = r19
 .def A=r20
-.def NRO_BITS_HX711 = r19
+
+.equ NRO_BITS_HX711 = 24
 
 ;defino los registros de I/O que voy a usar
 .equ DDR_ADSK = DDRB
@@ -127,7 +129,7 @@ loop:
 ;ADDO es el pin de datos del hx711
 ;A es un registro acumulador
 leer_hx711:
-	push NRO_BITS_HX711
+	push contador
 	push A
 	push peso_leido_L
 	push peso_leido_M
@@ -151,7 +153,7 @@ AD_not_finished:
 	rjmp AD_not_finished
 
 	;cargo el contador con 24 para pasar 24 bits
-	ldi NRO_BITS_HX711, 24
+	ldi contador, NRO_BITS_HX711
 
 ShiftOut:
 	;mando un pulso de clock
@@ -175,7 +177,7 @@ ShiftOut:
 	rol A
 	mov peso_leido_H,A
 	;chequeo si movio los 24 bits
-	dec NRO_BITS_HX711
+	dec contador
 	brne ShiftOut
 
 	;vuelvo a poner el clock en 1 cuando termina y asi
@@ -201,7 +203,7 @@ ShiftOut:
 	pop peso_leido_M
 	pop peso_leido_L
 	pop A
-	pop NRO_BITS_HX711
+	pop contador
 	ret 
 
 ;este delay dura 15 ciclos de maquina, sin contar el rcall
