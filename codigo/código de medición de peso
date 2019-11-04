@@ -1,0 +1,934 @@
+.include "m328Pdef.inc"
+
+;------------- definiciones leer_hx711 -------------
+;registros auxiliares
+.def A=r20
+.def NRO_BITS_HX711 = r19
+
+;defino los registros de I/O que voy a usar
+.equ DDR_ADSK = DDRB
+.equ DDR_ADDO = DDRB
+.equ port_ADSK = portB
+.equ pin_ADDO = pinB
+
+;pines de el/los puerto/s a utilizar
+.equ ADSK = 1
+.equ ADDO = 0
+
+;registros de paso del dato leido
+.def peso_leido_L = r16
+.def peso_leido_M = r17
+.def peso_leido_H = r18
+;--------------------------------------------------------------------
+;-----------------definiciones para leer_hx711_promedio-----------------
+.equ N = 16 ;debe ser potencia de 2 (y minimo 2) (cantidad de medidas a promediar)
+.equ div_N = 4	;cuantas veces shiftear para dividir por N
+
+.def leido_L=r16
+.def leido_M=r17
+.def leido_H=r18
+;--------------------------------------------------------------
+
+;----------- definiciones para comunicacion suart USART0 -----------
+
+.def  usart_leido = r20
+.def usart_escribir = r21
+;--------------------------------------------------------------------
+
+
+;--------------- escribir peso -----------------
+.equ UNIDAD_L = 'g' 
+.equ UNIDAD_H = 'r'
+.equ SEPARADOR = 0b00001101 ;(retorno de carro)
+;definiciones para la tara
+.equ CERO_H = 0x00
+.equ CERO_M = 0x00
+.equ CERO_L = 0x60
+;-----------------------------------------------
+
+;------------ dividir_por_escalar -----------------------
+.def dividendo_L = r16
+.def dividendo_M = r17
+.def dividendo_H = r18
+
+.def resultado_L = r19
+.def resultado_M = r20
+.def resultado_H = r21
+
+.def resto_L = r22
+.def resto_M = r23
+.def resto_H = r24
+
+.def signo = r25 
+
+.equ MASK_NEGATIVO = 0x80
+
+;escalar = medida_hx711/peso_real
+.equ ESCALAR_L = 0X9B
+.equ ESCALAR_M = 0X03
+.equ ESCALAR_H = 0X00
+;-----------------------------------------------------
+
+.dseg
+
+;manejo todos los datos por sram para no ocupar registros permanentemente	
+	dato_hx711:
+		.byte 3
+	resultado:
+		.byte 3
+	resto:
+		.byte 3
+	dividendo:
+		.byte 3
+
+.cseg
+	.ORG 0x00
+	rjmp main
+  
+	.ORG int_vectors_size
+
+main:
+	;inicializo el SP
+	ldi r20, high(RAMEND)
+	out sph, r20
+	ldi r20, low(RAMEND)
+	out spl, r20
+
+	;cargo el valor para el BAUD rate (BAUD = 9600) --> UBRR = 103
+	ldi r17, high(103)
+	ldi r16, low(103)
+	
+	;inicializo la comunicacion usart
+	rcall USART_Init
+
+	;limpio los registros que voy a usar
+	clr r16
+	clr r17
+	clr r20
+	;inicializo los pines de clock y dato conectados
+	sbi DDR_ADSK, ADSK
+	cbi DDR_ADDO, ADDO
+
+loop:
+
+	rcall escribir_peso
+	rcall delay
+	rcall delay
+	rjmp loop
+
+
+
+
+;---------------------- rutinas --------------------------------
+
+;leer conversión analógica digital
+;salida: 3 bytes desde dato_hx711 en sram (H:M:L)
+;ADSK es el pin del clock para el hx711
+;ADDO es el pin de datos del hx711
+;A es un registro acumulador
+leer_hx711:
+	push NRO_BITS_HX711
+	push A
+	push peso_leido_L
+	push peso_leido_M
+	push peso_leido_H
+	push XL
+	push XH
+  
+	;limpio el carry porque lo voy a usar
+	clc
+	;limpio los registros que voy a usar
+	clr peso_leido_L
+	clr peso_leido_M
+	clr peso_leido_H
+
+	;habilito la conversión de datos si no estaba activada
+	cbi port_ADSK, ADSK
+
+	;si no termino la conversión vuelve a chequear ADDO
+AD_not_finished:
+	sbic pin_ADDO, ADDO 	
+	rjmp AD_not_finished
+
+	;cargo el contador con 24 para pasar 24 bits
+	ldi NRO_BITS_HX711, 24
+
+ShiftOut:
+	;mando un pulso de clock
+	sbi port_ADSK, ADSK
+	;se necesita delay de 1us aproximadamente, usamos 18 ciclos de máquina (con freq=16MHz), por lo que tarda 1,125us
+	rcall T_high
+	cbi port_ADSK, ADSK
+
+	;guarda el dato leido en el carry
+	sbic pin_ADDO, ADDO
+	sec			
+	
+	;guarda el bit leido en los registros
+	mov A,peso_leido_L
+	rol A
+	mov peso_leido_L,A
+	mov A,peso_leido_M
+	rol A
+	mov peso_leido_M,A
+	mov A,peso_leido_H
+	rol A
+	mov peso_leido_H,A
+	;chequeo si movio los 24 bits
+	dec NRO_BITS_HX711
+	brne ShiftOut
+
+	;vuelvo a poner el clock en 1 cuando termina y asi
+	;pone a DOUT en alto nuevamente
+	sbi port_ADSK, ADSK
+	rcall T_high
+
+	;el clock debe terminar en bajo
+	;para no entrar en modo de bajo consumo del hx711
+	cbi port_ADSK, ADSK
+
+	ldi XL, low(dato_hx711)
+	ldi XH, high(dato_hx711)
+
+;guardo el dato en la SRAM
+	st X+, peso_leido_H
+	st X+, peso_leido_M
+	st X, peso_leido_L
+
+	pop XH
+	pop XL
+	pop peso_leido_H
+	pop peso_leido_M
+	pop peso_leido_L
+	pop A
+	pop NRO_BITS_HX711
+	ret 
+
+;este delay dura 15 ciclos de maquina, sin contar el rcall
+T_high:
+	push r16
+	ldi r16, 3
+T_h_loop:
+	dec r16
+	brne T_h_loop
+	
+	pop r16
+	ret
+
+;--------------------------USART0------------------------------------
+
+;inicializar la comunicación USART asincronica normal
+USART_Init:
+	; Setea baud rate (asume que el UBRR esta en R17(H):R16(L))
+	sts UBRR0H, r17
+	sts UBRR0L, r16
+	; habilita transmisión y recepción
+	ldi r16, (1<<RXEN0)|(1<<TXEN0)
+	sts UCSR0B,r16
+	; Setea formato de "frame"(bits de la comunicacion): 8data, 2stop bit
+	ldi r16, (1<<USBS0)|(3<<UCSZ00)
+	sts UCSR0C,r16
+	ret
+;-----------------------------------------------------
+;recibir datos de 5 a 8 bits en Usart_leido
+USART_Receive:
+	push r21
+	; Espera a recibir dato
+loop_r:
+	lds R21, UCSR0A
+	sbrs R21, RXC0
+	rjmp loop_r
+	; recibe los datos del buffer UDR0
+	lds usart_leido, UDR0
+
+	pop r21
+	ret
+;-----------------------------------------------------
+;transmitir 5 a 8 bits por usart_escribir
+
+USART_Transmit:
+	push r20
+	; Espera a que el buffer de transmisión este vacío
+loop_t:
+	lds R20,UCSR0A
+	sbrs R20,UDRE0
+	rjmp loop_t
+	; pone el dato de R16 en el buffer de transmisión y lo envía
+	sts UDR0,usart_escribir
+	pop r20
+	ret
+
+;-----------------------------------------------------
+/*------ en complemento a 2 y numeros de 3 bytes (resultado en dos bytes maximo) ------*/
+
+dividir_por_escalar:
+	push signo
+	push dividendo_H
+	push dividendo_M
+	push dividendo_L
+	push resultado_H
+	push resultado_M
+	push resultado_L
+	push resto_H
+	push resto_M
+	push resto_L
+	push XL
+	push XH
+
+;limpio los registros acumuladores que uso
+	clr resultado_L
+	clr resultado_M
+	clr resultado_H
+
+;seteo el puntero para obtener el dividendo
+	ldi XL, low(dividendo)
+	ldi XH, high(dividendo)
+
+	ld dividendo_H, X+
+	ld dividendo_M, X+
+	ld dividendo_L, X
+
+	mov signo, dividendo_H
+	andi signo, MASK_NEGATIVO	;obtengo el signo del resultado
+
+	sbrs dividendo_H,7 			;chequea si es negativo el dividendo
+	rjmp div
+
+  ;convierte el negativo a positivo si lo era (en complemento a 2)
+	com dividendo_H
+	com dividendo_M
+	neg dividendo_L
+	brne div					;si es 0, aumenta en 1 dividendo_M
+	inc dividendo_M
+	brne div
+	inc dividendo_H
+
+div:
+	mov resto_H, dividendo_H
+	mov resto_M, dividendo_M
+	mov resto_L, dividendo_L
+
+	subi dividendo_L, ESCALAR_L
+	sbci dividendo_M, ESCALAR_M
+	sbci dividendo_H, ESCALAR_H
+
+	breq iguales
+	brlo fijar_signo
+	inc resultado_L
+	;si resultado_L vuelve a 0 incrementa resultado_M
+	brne div
+	inc resultado_M
+	;si resultado_M vuelve a 0, incrementa resultado_H
+  brne div
+	inc resultado_H
+	rjmp div
+  
+iguales:
+	ldi resto_L, 0x00
+	ldi resto_M, 0x00
+	ldi resto_H, 0x00
+
+  ;si eran iguales incremento en 1 el resultado
+  inc resultado_L
+	brne fijar_signo
+	inc resultado_M
+	brne fijar_signo
+	inc resultado_H
+
+fijar_signo:
+	sbrs signo, 7
+	rjmp terminar
+	;si era negativo hace el complemento a 2
+  com resultado_M
+	com resultado_H
+	neg resultado_L
+	brne terminar					
+	inc resultado_M
+	brne terminar
+	inc resultado_H
+
+terminar:
+  ;guardo el resultado
+	ldi XL, low(resultado)
+	ldi XH, high(resultado)
+
+	st X+, resultado_H
+	st X+, resultado_M
+	st X, resultado_L
+  ;guardo el resto
+	ldi XL, low(resto)
+	ldi XH, high(resto)
+
+	st X+, resto_H
+	st X+, resto_M
+	st X, resto_L
+
+	pop XH
+	pop XL
+	pop resto_L
+	pop resto_M
+	pop resto_H
+	pop resultado_L
+	pop resultado_M
+	pop resultado_H
+	pop dividendo_L
+	pop dividendo_M
+	pop dividendo_H
+	pop signo
+	ret
+
+;----------------- manda el peso escalado en gr por USART0 --------------
+escribir_peso:
+	push r19
+	push XL
+	push XH
+	push YL
+	push YH
+	push ZL
+	push ZH
+
+	;manejo datos por punteros
+	ldi XH, high(dato_hx711)
+	ldi XL, low(dato_hx711)
+
+	ldi YH, high(dividendo)
+	ldi YL, low(dividendo)
+
+  ldi ZH, high(resto)
+	ldi ZL, low(resto)
+  
+  ;leo un promedio de datos del hx711 y lo guardo en dato_hx711 en sram
+	rcall leer_hx711_promedio
+
+	;guardo en sram: dividendo = dato_hx711
+	ld r19, X+
+	st Y+, r19
+	ld r19, X+
+	st Y+, r19
+	ld r19, X
+	st Y, r19
+  ;vuelvo el puntero para volver a usarlo
+  subi YL, 2
+
+;hago ahora que X apunte a resultado (X: resultado, Y: dividendo, Z: resto)
+  ldi XH, high(resultado)
+	ldi XL, low(resultado)
+
+  ;escalo el resultado para obtener la medida en peso
+	rcall  dividir_por_escalar
+
+ ;resto la tara (que tambien está escalada)
+  subi XL, -2			  ;me paro en resultado_L
+  ld r19, X
+	subi r19, CERO_L	
+	st X, r19       
+  ld r19, -X        ;resultado_M
+	sbci r19, CERO_M	;resto la tara
+	st X, r19
+	ld r19, -X        ;resultado_H
+	sbci r19, CERO_H	;resto la tara
+	st X, r19
+
+;transmito por USART0 el resultado (entero)
+	rcall transmitir_en_ascii
+
+;SEPARADOR DECIMAL ','
+	ldi usart_escribir, ','
+	rcall usart_transmit
+
+;primer decimal (multiplico por 10 al resto y lo divido por el escalar)
+  rcall mul_10
+
+	;guardo en sram dividendo = resto
+	ld r19, Z+
+	st Y+, r19	
+	ld r19, Z+
+	st Y+, r19	
+	ld r19, Z
+	st Y, r19	
+  
+  ;vuelvo los punteros a la posicion original
+  subi YL, 2
+	subi ZL, 2
+
+	rcall dividir_por_escalar
+
+	;transmito resultado_L (porque el M y H deben estar vacíos si es un decimal)
+	subi XL, -2 ;resultado_L
+	ld r19, X
+	subi r19, -'0'	;lo escribo como nro ascii
+	mov usart_escribir, r19
+	rcall usart_transmit
+	subi XL, 2
+
+;segundo decimal (idem al primero)
+	rcall mul_10
+
+  ld r19, Z+
+	st Y+, r19	
+	ld r19, Z+
+	st Y+, r19	
+	ld r19, Z
+	st Y, r19	
+	subi YL, 2
+	subi ZL, 2
+
+	rcall dividir_por_escalar
+
+	subi XL, -2
+	ld r19, X
+	subi r19, -'0' 
+	mov usart_escribir, r19
+	rcall usart_transmit
+
+;escribo la unidad de la medida y un separador (retorno de carro)
+	ldi usart_escribir, UNIDAD_L
+	rcall usart_transmit
+	ldi usart_escribir, UNIDAD_H
+	rcall usart_transmit
+
+  ldi usart_escribir, SEPARADOR
+	rcall usart_transmit
+
+	pop ZH
+	pop ZL	
+	pop YH
+	pop YL
+	pop XH
+	pop XL
+	pop r19
+	ret
+;---------------------------------------
+;multiplicacion x10 del resto
+mul_10:
+	push r16
+	push r17
+	push r18
+	push r19
+	push XL
+	push XH
+	push resto_L
+	push resto_M
+	push resto_H
+
+	ldi XH, high(resto)
+	ldi XL, low(resto)
+	
+	ld resto_H, X+
+	ld resto_M, X+
+	ld resto_L, X
+	mov r18, resto_H
+	mov r17, resto_M
+	mov r16, resto_L
+
+  ldi r19, 9
+loop_mul_10:
+	add resto_L, r16
+	adc resto_M, r17
+	adc resto_H, r18
+	dec r19
+	brne loop_mul_10
+
+  ;lo guardo en la sram
+	st X, resto_L
+	dec XL
+	st X , resto_M
+	dec XL
+	st X, resto_H	
+
+	pop resto_H
+	pop resto_M
+	pop resto_L
+	pop XH
+	pop XL
+	pop r19
+	pop r18
+	pop r17
+	pop r16
+	ret
+;----------------------------------------------------
+
+;---------------------------------
+;convierte el resultado de dividir_por_escalar a un nro entero ascii
+transmitir_en_ascii:
+	push r16
+	push r17
+	push r18
+	push r19
+	push r20
+	push r21
+	push r22
+	push r23
+	push XL
+	push XH
+
+	ldi XH, high(resultado)
+	ldi XL, low(resultado) 
+	
+	ld r18, X+	;resultado_H
+	ld r17, X+	;resultado_M
+	ld r16, X	;resultado_L
+
+	;chequeo el signo del resultado, y si lo es, escribo un '-' y lo complemento
+	sbrs r18, 7
+	rjmp transmitir
+
+  ;escribo el '-'
+loop_t1:
+	lds R23,UCSR0A
+	sbrs R23,UDRE0
+	rjmp loop_t1
+	ldi r23, '-'
+	sts UDR0,r23
+	;complemento el dato
+	com r18
+	com r17
+	neg r16	
+	brne transmitir
+	inc r17
+	brne transmitir
+	inc r18
+
+transmitir:
+
+;resto de a 1.000.000 hasta que de menor a 0
+	ldi r19, 0 ;acumulador en 0
+loop_millones:
+	mov r22, r18
+	mov r21, r17
+	mov r20, r16
+	
+	subi r16, 0x40	;-millon_L
+	sbci r17, 0x42	;-millon_M
+	sbci r18, 0x0F	;-millon_H
+
+	brlo salteo_millones
+	inc r19
+	rjmp loop_millones
+
+salteo_millones:
+	mov r18, r22
+	mov r17, r21
+	mov r16, r20
+	;lo mando a los nros ascii (0=48(decimal))
+	subi r19,-'0'
+;lo transmito por USART al monitor serie
+loop_t2:
+	lds R23,UCSR0A
+	sbrs R23,UDRE0
+	rjmp loop_t2
+	sts UDR0,r19
+
+;resto de a 100.000 hasta que de menor a 0
+	ldi r19, 0 ;acumulador en 0
+loop_cmil:
+	mov r22, r18
+	mov r21, r17
+	mov r20, r16
+
+	subi r16, 0xA0
+	sbci r17, 0x86
+	sbci r18, 0x01
+
+	brlo salteo_cmil
+	inc r19
+	rjmp loop_cmil
+
+salteo_cmil:
+	mov r18, r22
+	mov r17, r21
+	mov r16, r20
+	;lo mando a los nros ascii (0=48(decimal))
+	subi r19,-'0'
+	;lo transmito por USART al monitor serie
+loop_t3:
+	lds R23,UCSR0A
+	sbrs R23,UDRE0
+	rjmp loop_t3
+	sts UDR0,r19
+
+;resto de a 10.000 hasta que de menor a 0
+	ldi r19, 0 ;acumulador en 0
+loop_dmil:
+	mov r22, r18
+	mov r21, r17
+	mov r20, r16
+
+	subi r16, 0x10
+	sbci r17, 0x27
+	sbci r18, 0x00
+
+	brlo salteo_dmil
+	inc r19
+	rjmp loop_dmil
+
+salteo_dmil:
+	mov r18, r22
+	mov r17, r21
+	mov r16, r20
+	;lo mando a los nros ascii (0=48(decimal))
+	subi r19,-'0'
+;lo transmito por USART al monitor serie
+loop_t4:
+	lds R23,UCSR0A
+	sbrs R23,UDRE0
+	rjmp loop_t4
+	sts UDR0,r19
+
+;resto de a 1000 hasta que de menor a 0
+	ldi r19, 0 ;acumulador en 0
+loop_umil:
+	mov r22, r18
+	mov r21, r17
+	mov r20, r16
+
+	subi r16, 0xE8
+	sbci r17, 0x03
+	sbci r18, 0x00
+
+	brlo salteo_umil
+	inc r19
+	rjmp loop_umil
+
+salteo_umil:
+	mov r18, r22
+	mov r17, r21
+	mov r16, r20
+	;lo mando a los nros ascii (0=48(decimal))
+	subi r19,-'0'
+;lo transmito por USART al monitor serie
+loop_t5:
+	lds R23,UCSR0A
+	sbrs R23,UDRE0
+	rjmp loop_t5
+	sts UDR0,r19
+
+;resto de a 100 hasta que de menor a 0
+	ldi r19, 0 ;acumulador en 0
+loop_centenas:
+	mov r22, r18
+	mov r21, r17
+	mov r20, r16
+
+	subi r16, 0x64
+	sbci r17, 0x00
+	sbci r18, 0x00
+
+	brlo salteo_centenas
+	inc r19
+	rjmp loop_centenas
+
+salteo_centenas:
+	mov r18, r22
+	mov r17, r21
+	mov r16, r20
+	;lo mando a los nros ascii (0=48(decimal))
+	subi r19,-'0'
+;lo transmito por USART al monitor serie
+loop_t6:
+	lds R23,UCSR0A
+	sbrs R23,UDRE0
+	rjmp loop_t6
+	sts UDR0,r19
+
+;resto de a 10 hasta que de menor a 0
+	ldi r19, 0 ;acumulador en 0
+loop_decenas:
+	mov r22, r18
+	mov r21, r17
+	mov r20, r16
+
+	subi r16, 0x0A
+	sbci r17, 0x00
+	sbci r18, 0x00
+
+	brlo salteo_decenas
+	inc r19
+	rjmp loop_decenas
+
+salteo_decenas:
+	mov r18, r22
+	mov r17, r21
+	mov r16, r20
+	;lo mando a los nros ascii (0=48(decimal))
+	subi r19,-'0'
+;lo transmito por USART al monitor serie
+loop_t7:
+	lds R23,UCSR0A
+	sbrs R23,UDRE0
+	rjmp loop_t7
+	sts UDR0,r19
+
+;resto de a 1 hasta que de menor a 0
+	ldi r19, 0 ;acumulador en 0
+loop_unidades:
+	mov r22, r18
+	mov r21, r17
+	mov r20, r16
+
+	subi r16, 0x01
+	sbci r17, 0x00
+	sbci r18, 0x00
+
+	brlo salteo_unidades
+	inc r19
+	rjmp loop_unidades
+
+salteo_unidades:
+	mov r18, r22
+	mov r17, r21
+	mov r16, r20
+	;lo mando a los nros ascii (0=48(decimal))
+	subi r19,-'0'
+;lo transmito por USART al monitor serie
+loop_t8:
+	lds R23,UCSR0A
+	sbrs R23,UDRE0
+	rjmp loop_t8
+	sts UDR0,r19
+
+	pop XH
+	pop XL
+	pop r23
+	pop r22
+	pop r21
+	pop r20
+	pop r19
+	pop r18
+	pop r17
+	pop r16
+	ret
+  
+;----------------------------------------------------
+
+leer_hx711_promedio:
+	push leido_L	;r16
+	push leido_M	;r17
+	push leido_H	;r18
+	push r19
+	push r20
+	push r21
+	push r22
+	push r23
+	push r24
+	push XL
+	push XH
+	
+ ;limpio los registros acumuladores que voy a usar
+	clr r20
+	clr r21
+	clr r22
+	clr r23
+
+;puntero para obtener los datos que leo
+	ldi XL, LOW(dato_hx711)
+	ldi XH, HIGH(dato_hx711)
+
+	;hace el promedio de N pesos leidos	
+	ldi r19, N
+
+sumar:
+	clr r24
+	rcall leer_hx711
+	ld leido_H, X+
+	ld leido_M, X+
+	ld leido_L, X
+	subi XL, 2
+
+	sbrs leido_H,7 			;chequea si es negativo
+	rjmp skip				
+	ldi r24, 0xFF			;si es negativo lo escribo en 4 registros en complemento a 2
+
+skip:
+	;sumo de a 4 registros y acumulo el resultado en r23:r22:r21:r20 (r20 es el LOW)
+	add r20, leido_L
+	adc r21, leido_M
+	adc	r22, leido_H
+	adc r23, r24
+  
+	dec r19
+	brne sumar
+
+;para dividir shifteando no debe estar complementado (si es negativo hago el complemento a 2)
+	;guardo en r24 el signo
+	mov r24, r23
+	andi r24, MASK_NEGATIVO
+	;si es positivo salteo todo el complemento de los 4 registros
+	sbrs R23, 7
+	rjmp saltear
+	;si es negativo hago el complemento a 2 de los 4 registros
+	com r23
+	com r22
+	com r21
+	neg r20
+	brne saltear
+	inc r21
+	brne saltear
+	inc r22
+	brne saltear
+	inc r23
+
+saltear:
+	;divide por N el resultado
+	ldi r19, div_N
+dividir:
+	lsr r23
+	ror r22
+	ror r21
+	ror r20
+	dec r19
+	brne dividir
+	
+;SI ERA NEGATIVO LO VUELVO A COMPLEMENTAR (pero el resultado queda en 3 registros)
+	sbrs r24,7
+	rjmp terminar_promedio
+	com r22
+	com r21
+	neg r20
+	brne terminar_promedio
+	inc r21
+	brne terminar_promedio
+	inc r22
+
+terminar_promedio:
+	;una vez obtenido el resultado del promedio de 4 medidas de peso
+	;lo guarda en la sram en la posicion dato_hx711 
+  
+  st X+, r22 ;peso_H
+	st X+, r21 ;peso_M
+	st X, r20  ;peso_L
+
+	pop XH
+	pop XL
+	pop r24
+	pop r23
+	pop r22
+	pop r21
+	pop r20
+	pop r19
+	pop leido_H
+	pop leido_M
+	pop leido_L
+	ret
+/* -------------------------------------- */
+
+;delay para que la salida de datos no sea demasiado rapida
+delay:
+	push r22
+	push r18
+	push r23
+	ldi r22, $50
+again3:	ldi r18, $FF
+again2: ldi r23, $FF
+again1:	dec r23
+	brne again1
+	dec r18
+	brne again2
+	dec r22
+	brne again3
+	nop
+	pop r23
+	pop r18
+	pop r22
+	ret
+
