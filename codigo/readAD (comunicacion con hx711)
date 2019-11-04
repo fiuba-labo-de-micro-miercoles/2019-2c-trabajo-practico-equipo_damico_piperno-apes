@@ -2,27 +2,28 @@
 ;Se trabaja con el Microcontrolador ATMega328P
 .include "m328Pdef.inc"
 ;------------- definiciones leer_hx711 -------------
-;registro auxiliar
+;registros auxiliares
 .def A=r20
+.def contador = r19
 
-;numero de bits a leer
-.equ NRO_BITS = 24
+.equ NRO_BITS_HX711 = 24
 
-;defino los registros de I/O que voy a usar
+;defino los registros de I/O que voy  a usar
 .equ DDR_ADSK = DDRB
 .equ DDR_ADDO = DDRB
-.equ PORT_ADSK = portB
-.equ PIN_ADDO = pinB
+.equ port_ADSK = portB
+.equ pin_ADDO = pinB
 
 ;pines de el/los puerto/s a utilizar
 .equ ADSK = 1
 .equ ADDO = 0
 
-;registros de salida del dato leido
-.def PESO_LEIDO_L = r16
-.def PESO_LEIDO_M = r17
-.def PESO_LEIDO_H = r18
-;-----------------------------------------------
+;registros de paso del dato leido
+.def peso_leido_L = r16
+.def peso_leido_M = r17
+.def peso_leido_H = r18
+;--------------------------------------------------------------------
+
 
 /* El conversor Analógico/Digital HX711 tiene 2 terminales: DT y SCK.
 DT es una entrada para el micro (con pull-up) y SCK es una salida del microcontrolador.
@@ -40,6 +41,8 @@ Cuando el HX711 termina la siguiente conversión vuelve a bajar DT.
 
 .dseg
 
+dato_hx711:
+	.byte 3
 
 .cseg
   	.ORG 0x00
@@ -61,63 +64,91 @@ loop:
   	  rcall leer_hx711
 	  rjmp loop
 
-
+;------------------------------------------------------------------------
 ;leer conversión analógica digital
-;salida: r18:r17:r16 (r16 lsb), r19 es un contador
-;ADSK es el pin del clock para el hx711, ADDO es el pin de datos del hx711, Asume que las conexiones estan en el puerto D
+;salida: 3 bytes desde dato_hx711 en sram (H:M:L)
+;ADSK es el pin del clock para el hx711
+;ADDO es el pin de datos del hx711
 ;A es un registro acumulador
+
 leer_hx711:
-  	  push r19
-	  push A
+	push NRO_BITS_HX711
+	push A
+	push peso_leido_L
+	push peso_leido_M
+	push peso_leido_H
+	push XL
+	push XH
+	;limpio el carry porque lo voy a usar
+	clc
+	;limpio los registros que voy a usar
+	clr peso_leido_L
+	clr peso_leido_M
+	clr peso_leido_H
 
-  	  ;habilito la conversión de datos si no estaba activada
-	  cbi PORT_ADSK, ADSK
+	;habilito la conversión de datos si no estaba activada
+	cbi port_ADSK, ADSK
 
-  	  ;si no termino la conversión vuelve a chequear ADDO
+	;si no termino la conversión vuelve a chequear ADDO
 AD_not_finished:
-	  sbic PIN_ADDO, ADDO 	
-	  rjmp AD_not_finished
+	sbic pin_ADDO, ADDO 	
+	rjmp AD_not_finished
 
-  	  ;cargo el contador r19 con 24 para pasar 24 bits
-	  ldi r19, NRO_BITS
-	  
+	;cargo el contador r19 con 24 para pasar 24 bits
+	ldi contador, NRO_BITS_HX711
+
 ShiftOut:
-	  ;mando un pulso de clock
-	  sbi PORT_ADSK, ADSK
-	  ;se necesita delay de 1us aproximadamente, usamos 18 ciclos de máquina (con freq=16MHz), por lo que tarda 1,125us
-	  rcall T_high
-	  cbi PORT_ADSK, ADSK
+	;mando un pulso de clock
+	sbi port_ADSK, ADSK
+	;se necesita delay de 1us aproximadamente, usamos 18 ciclos de máquina (con freq=16MHz), por lo que tarda 1,125us
+	rcall T_high
+	cbi port_ADSK, ADSK
 
-  	  ;guarda el dato leido en el carry
-	  sbic PIN_ADDO, ADDO
-	  sec			
+	;guarda el dato leido en el carry
+	sbic pin_ADDO, ADDO
+	sec			
 	
-	  ;guarda el bit leido en los registros
-	  mov A,PESO_LEIDO_L
-  	rol A
-	  mov PESO_LEIDO_L,A
-  	mov A,PESO_LEIDO_M
-  	rol A
-	  mov PESO_LEIDO_M,A
-  	mov A,PESO_LEIDO_H
-  	rol A
-	  mov PESO_LEIDO_H,A
-	  ;chequeo si movio los 24 bits
-  	dec r19
-	  brne ShiftOut
+	;guarda el bit leido en los registros
+	mov A,peso_leido_L
+	rol A
+	mov peso_leido_L,A
+	mov A,peso_leido_M
+	rol A
+	mov peso_leido_M,A
+	mov A,peso_leido_H
+	rol A
+	mov peso_leido_H,A
+	;chequeo si movio los 24 bits
+	dec contador
+	brne ShiftOut
 
-  	;mando 1 pulso mas para indicar que la proxima conversión sea de la entrada A del modulo
-	  sbi PORT_ADSK, ADSK
-	  rcall T_high
+	;vuelvo a poner el clock en 1 cuando termina y asi
+	;pone a DOUT en alto nuevamente
+	sbi port_ADSK, ADSK
+	rcall T_high
 
-  	;el clock debe terminar en bajo para no entrar en modo de bajo consumo del hx711
-  	cbi PORT_ADSK, ADSK
+	;el clock debe terminar en bajo
+	;para no entrar en modo de bajo consumo del hx711
+	cbi port_ADSK, ADSK
 
-  	pop A
-  	pop r19
-  	ret 
-	
-	
+	ldi XL, low(dato_hx711)
+	ldi XH, high(dato_hx711)
+
+;guardo el dato en la SRAM
+	st X+, peso_leido_H
+	st X+, peso_leido_M
+	st X, peso_leido_L
+
+	pop XH
+	pop XL
+	pop peso_leido_H
+	pop peso_leido_M
+	pop peso_leido_L
+	pop A
+	pop NRO_BITS_HX711
+	ret 
+
+
 ;este delay dura 15 ciclos de maquina, sin contar el rcall
 T_high:
 	push r16
