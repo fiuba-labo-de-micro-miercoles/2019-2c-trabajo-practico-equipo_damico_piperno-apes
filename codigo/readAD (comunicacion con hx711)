@@ -72,7 +72,7 @@ loop:
 ;A es un registro acumulador
 
 leer_hx711:
-	push NRO_BITS_HX711
+	push contador
 	push A
 	push peso_leido_L
 	push peso_leido_M
@@ -145,7 +145,7 @@ ShiftOut:
 	pop peso_leido_M
 	pop peso_leido_L
 	pop A
-	pop NRO_BITS_HX711
+	pop contador
 	ret 
 
 
