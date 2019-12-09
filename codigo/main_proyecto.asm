@@ -1,18 +1,12 @@
 .include "m328pdef.inc"
-;----------- definiciones para comunicacion suart USART0 -----------
-
-.def  usart_leido = r23
-.def usart_escribir = r24
-;--------------------------------------------------------------------
-
-
-
 
 ;------------------ definiciones para datos SRAM --------------------
+;codigo binario de peso para cota menor de detecci贸n de pulsos/vasos
 .equ PESO_UMBRAL_H = 0x02
 .equ PESO_UMBRAL_M = 0x00
 .equ PESO_UMBRAL_L = 0x00
 
+;codigo binario de peso para cota mayor de detecci贸n de pulsos/vasos
 .equ PESO_MAX_H = 0x05
 .equ PESO_MAX_M = 0xFE 
 .equ PESO_MAX_L = 0x00
@@ -27,8 +21,9 @@
 .equ PESO_LIQUIDO_2_H = 0x00
 .equ PESO_LIQUIDO_2_M = 0x78
 .equ PESO_LIQUIDO_2_L = 0x80
+;--------------------------------------------------------------------
 
-;-------- manejar_estado.def ---------------------------------------
+;------------------ definiciones  manejar_estado --------------------
 ;registro de estados
 .def estado = r16			;ESTE REGISTRO NO PUEDE SER USADO PARA OTRA COSA
 
@@ -42,12 +37,11 @@
 .equ S2_BIT = 3
 ;bit de estado de espera a retirar vaso lleno
 .equ RV_BIT = 4
-;-------------------------------------------------------------------
 
 ;------- estado de deteccion --------
 .def contador = r17
 
-;hay que medirlos todav韆
+;hay que medirlos todav铆a
 .equ TIEMPO_PULSO_MENOR = 1
 .equ TIEMPO_PULSO_MAYOR = 3
 
@@ -60,9 +54,9 @@
 .def temp_H = r21
 
 .def graduacion = r22
-;---------------------------------------------------------
+;--------------------------------------------------------------------
 
-;------------- definiciones leer_hx711 -------------
+;---------------------- definiciones leer_hx711 ---------------------
 ;registros auxiliares
 .def A=r20
 .def NRO_BITS_HX711 = r19
@@ -83,24 +77,25 @@
 .def peso_leido_H = r18
 ;--------------------------------------------------------------------
 
-;-----------------definiciones para promedio-----------------
+;-------------------- definiciones para promedio --------------------
 .equ LONG_TABLA = 8 ;debe ser potencia de 2 (y minimo 2)
 .equ DIV_LONG_TABLA = 3	;cuantas veces shiftear para dividir por N
 .def leido_L=r16
 .def leido_M=r17
 .def leido_H=r18
-;--------------------------------------------------------------
-;----------------- definiciones para guardar_peso --------------------
+;--------------------------------------------------------------------
+;---------------- definiciones para guardar_peso --------------------
 .def gd_temp = r16
 .def reg_posicion_tabla = r17
 .def gd_contador = r18
 
 .equ TMNO_DATO = 3
 .equ FIN_TABLA = 24
+;--------------------------------------------------------------------
 
-;----------- cambiar graduacion (control de display) -----------
+;--------------- cambiar graduacion (control de display) -------------
 .equ DDR_DISPLAY = DDRD
-.equ PORT_DISPLAY = PORTD				 ;puerto utilizado para el display
+.equ PORT_DISPLAY = PORTD	 ;puerto utilizado para el display
 
 ;posiciones de los LEDs en el puerto
 .equ LED_1 = 2
@@ -109,28 +104,31 @@
 .equ LED_4 = 5
 .equ LED_5 = 6
 .def display = r16
-;-----------------------------------------
-;----------- obtener graduacion -----------
+;--------------------------------------------------------------------
+;----------------- definiciones obtener graduacion ------------------
 ;deben coincidir con el display de leds
 .equ GRAD_20 =3
 .equ GRAD_30 =4
 .equ GRAD_40 =5
 .equ GRAD_50 =6
-;-----------------------------------------
-;------------ control de bombas -----------
+;--------------------------------------------------------------------
+;----------------- definiciones control de bomba --------------------
 .equ DDR_BOMBAS = DDRB
 .equ PORT_BOMBAS = PORTB
 
 ;pines donde estan las bombas
 .equ BOMBA_1 = 3
 .equ BOMBA_2 = 4
-;------------------------------------------
-
-;---------cmp24-------
-.def cp24_temp = r24
-;---------------------
-
 ;--------------------------------------------------------------------
+
+;------------------ definiciones para cmp24 -------------------------
+.def cp24_temp = r24
+;--------------------------------------------------------------------
+;----------- definiciones para comunicacion uart (USART0) -----------
+.def  usart_leido = r23
+.def usart_escribir = r24
+;--------------------------------------------------------------------
+
 
 .dseg
 ;umbral de deteccion para estado activo
@@ -185,7 +183,6 @@ main:
 	ldi r20, low(RAMEND)
 	out spl, r20
 
-;--------------------------sacar esto-------------------------
 	;cargo el valor para el BAUD rate (BAUD = 9600) --> UBRR = 103
 	ldi r17, high(103)
 	ldi r16, low(103)
@@ -194,16 +191,14 @@ main:
 	rcall USART_Init
 	clr r16
 	clr r17
-;-----------------------------------------------------------------	
 
-;hay que inicializar uart (por el momento no)
 ;inicializo la posicion de tabla en 0
 	ldi XL, low(posicion_tabla)
 	ldi XH, high(posicion_tabla)
 	ldi r20, 0
 	st X, r20
 
-;hay que inicializar sleep
+;inicializo el sleep mode
 	in r20, SMCR
 	;limpio los bits de velocidad en el registro
 	ori r20, 1<<SE
@@ -211,11 +206,6 @@ main:
 	;seteo la modo de timer (a idle: (SM2|1|0) = 000)
 	andi r20, ~(1<<SM0|1<<SM1|1<<SM2)
 	out SMCR,R20
-
-
-
-
-
 
 ;guardo los datos de ummbral, peso de 10% liquido 1, peso de 10% liquido 2 en la sram
 	ldi XL, low(peso_umbral)
@@ -295,6 +285,8 @@ main:
 ;setear registro de estados en 0 (chequeo de pulso/vaso)
 	clr estado
 	ori estado, 1<<DT_BIT
+	
+;habilito interrupciones globales
 	sei
 
 main_loop:
@@ -340,7 +332,7 @@ estado_deteccion:
 	ldi YH, high(peso_umbral)
 	rcall cp24
 
-	;si el dato leido es menor al umbral y menor al m醲imo, va a validar si es un pulso
+	;si el dato leido es menor al umbral y menor al m谩ximo, va a validar si es un pulso
 	brtc validar
 
 	;si es mayor a umbral, incrementa el contador
@@ -388,7 +380,7 @@ ret_estado_deteccion:
 	ret
 
 ;------------- (estado 2) ------------------
-;en este  estado configuro las cotas hasta las que va a servir cada l韖uido
+;en este  estado configuro las cotas hasta las que va a servir cada l铆quido
 estado_configurar_vaso:
 	push graduacion
 	push XL
@@ -398,7 +390,7 @@ estado_configurar_vaso:
 	push temp_M
 	push temp_H
 
-	;desactivo el timer cuando configuro
+;desactivo el timer cuando configuro
 	rcall desactivar_timer
 
 	ldi XL, low(dato_hx711)
@@ -412,7 +404,7 @@ estado_configurar_vaso:
 	ld temp_M, X+
 	ld temp_L, X
 
-;guardo en cota 1 el valor del vaso + el peso del 10% del l韖uido_1 por la graduacion elegida
+;guardo en cota 1 el valor del vaso + el peso del 10% del l铆quido_1 por la graduacion elegida
 	ldi XL, low(peso_liquido_1+2)
 	ldi XH, high(peso_liquido_1+2)
 	;meto el valor en el stack para no perderlo
@@ -589,7 +581,7 @@ estado_retirar_vaso:
 	ldi YH, high(peso_umbral)
 
 	rcall cp24
-	;si el promedio es menor al umbral, cambia de estado a Detecci髇
+	;si el promedio es menor al umbral, cambia de estado a Detecci贸n
 	brtc cambiar_a_DT
 	rjmp ret_estado_retirar_vaso
 
@@ -603,6 +595,7 @@ ret_estado_retirar_vaso:
 
 
 ;-----------------------------------------------------------------
+;guarda el peso leido en una tabla de 8 valores de peso (cada uno de 3 bytes)
 guardar_peso:
 	push gd_contador
 	push reg_posicion_tabla
@@ -612,7 +605,7 @@ guardar_peso:
 	push YL
 	push YH
 
-	;pongo en gd_contador el tama駉 de los datos de la tabla (cuantos registros ocupa)
+	;pongo en gd_contador el tama帽o de los datos de la tabla (cuantos registros ocupa)
 	ldi gd_contador, TMNO_DATO
 
 	;obtengo la posicion de donde guarde el dato menos reciente
@@ -625,7 +618,7 @@ guardar_peso:
 	ldi YL, low(tabla_pesos)
 	ldi YH, high(tabla_pesos)
 
-;guardo el dato leido en la posicion de la tabla que segu韆 de la vez anterior
+;guardo el dato leido en la posicion de la tabla que segu铆a de la vez anterior
 	add YL, reg_posicion_tabla
 	brcc guardar_siguiente
 	inc YH
@@ -662,6 +655,7 @@ ret_guardar_dato:
 	ret
 
 ;---------------------- cambiar graduacion --------------------------
+;cambia los LED del display para indicar la graduacion elegida
 cambiar_graduacion:
 	push display
 
@@ -702,6 +696,7 @@ ret_modificar_display:
 	pop display
 	ret
 ;------------------- obtener graduacion ---------------------
+;obtiene la graduacion elegida a partir del display y la guarda en el registro "graduacion"
 obtener_graduacion:
 
 	;la graduacion debe estar al menos en 10% (graduacion = 1)
@@ -758,6 +753,7 @@ cerrar_bomba_2:
 	cbi PORT_BOMBAS, BOMBA_2
 	ret
 ;------------------------- leer_hx711 ---------------------------------------
+;lee el peso obtenido por el m贸dulo amplificador conversor y lo guarda en la ram en la posicion "dato_hx711"
 leer_hx711:
 	push NRO_BITS_HX711
 	push A
@@ -773,10 +769,10 @@ leer_hx711:
 	clr peso_leido_M
 	clr peso_leido_H
 
-	;habilito la conversi髇 de datos si no estaba activada
+	;habilito la conversi贸n de datos si no estaba activada
 	cbi port_ADSK, ADSK
 
-	;si no termino la conversi髇 vuelve a chequear ADDO
+	;si no termino la conversi贸n vuelve a chequear ADDO
 AD_not_finished:
 	sbic pin_ADDO, ADDO 	
 	rjmp AD_not_finished
@@ -787,7 +783,7 @@ AD_not_finished:
 ShiftOut:
 	;mando un pulso de clock
 	sbi port_ADSK, ADSK
-	;se necesita delay de 1us aproximadamente, usamos 18 ciclos de m醧uina (con freq=16MHz), por lo que tarda 1,125us
+	;se necesita delay de 1us aproximadamente, usamos 18 ciclos de m谩quina (con freq=16MHz), por lo que tarda 1,125us
 	rcall T_high
 	cbi port_ADSK, ADSK
 
@@ -898,7 +894,7 @@ dividir:
 	dec r19
 	brne dividir
 	
-	;resto un valor peque駉 para permitir un margen de tolerancia al servir
+	;resto un valor peque帽o para permitir un margen de tolerancia al servir
 	subi r20, 0x00
 	sbci r21, 0x19
 	sbci r22, 0x00
@@ -978,6 +974,8 @@ ISR_T1_OV:
 	push usart_escribir
 	
 	rcall leer_hx711
+
+;transmito el resultado por el puerto serie para leerlo en la pantalla
 	ldi XL, low(dato_hx711)
 	ldi XH, high(dato_hx711)
 		
@@ -998,12 +996,12 @@ ISR_T1_OV:
 
 ;--------------------------USART0------------------------------------
 
-;inicializar la comunicaci髇 USART asincronica normal
+;inicializar la comunicaci贸n USART asincronica normal
 USART_Init:
 	; Setea baud rate (asume que el UBRR esta en R17(H):R16(L))
 	sts UBRR0H, r17
 	sts UBRR0L, r16
-	; habilita transmisi髇 y recepci髇
+	; habilita transmisi贸n y recepci贸n
 	ldi r16, (1<<RXEN0)|(1<<TXEN0)
 	sts UCSR0B,r16
 	; Setea formato de "frame"(bits de la comunicacion): 8data, 2stop bit
@@ -1028,12 +1026,12 @@ loop_r:
 ;transmitir 5 a 8 bits por usart_escribir
 USART_Transmit:
 	push r20
-	; Espera a que el buffer de transmisi髇 este vac韔
+	; Espera a que el buffer de transmisi贸n este vac铆o
 loop_t:
 	lds R20,UCSR0A
 	sbrs R20,UDRE0
 	rjmp loop_t
-	; pone el dato de R16 en el buffer de transmisi髇 y lo env韆
+	; pone el dato de R16 en el buffer de transmisi贸n y lo env铆a
 	sts UDR0,usart_escribir
 	pop r20
 	ret
