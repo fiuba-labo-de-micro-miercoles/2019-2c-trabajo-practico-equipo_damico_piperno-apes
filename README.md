@@ -9,7 +9,7 @@ Integrantes:
   
 Proyecto:
   
-  Fernetera
+  Coctelera
 
 Breve descripción: 
   
